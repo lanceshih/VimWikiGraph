@@ -34,6 +34,8 @@ class State:
         self.filename_filter = app.config.get('DEFAULT_FILE_FILTER', [])
         self.invert_filename_filter = app.config.get('DEFAULT_INVERT_FILE_FILTER', False)
         self.collapse = app.config.get('DEFAULT_COLLAPSE', [])
+        self.remove_leaves_depth = app.config.get('DEFAULT_REMOVE_LEAVES_DEPTH', 0)
+        self.add_leaves_depth = app.config.get('DEFAULT_ADD_LEAVES_DEPTH', 0)
 
     @staticmethod
     def get_instance():
@@ -41,13 +43,15 @@ class State:
             State.instance = State()
         return State.instance
 
-    def set_form(self, filter, invert_filter, filename_filter, invert_file_filter, highlight, collapse):
+    def set_form(self, filter, invert_filter, filename_filter, invert_file_filter, highlight, collapse, remove_leaves_depth=0, add_leaves_depth=0):
         self.filter = filter.split(self.SEP)
         self.invert_filter = invert_filter
         self.filename_filter = filename_filter.split(self.SEP)
         self.invert_filename_filter = invert_file_filter
         self.highlight = highlight.split(self.SEP)
         self.collapse = collapse.split(self.SEP)
+        self.remove_leaves_depth = int(remove_leaves_depth)
+        self.add_leaves_depth = int(add_leaves_depth)
 
     def get_graph(self):
         return self.vimwikigraph
@@ -75,6 +79,8 @@ def route_index():
             invert_filename_value=state.invert_filename_filter,
             highlight_value=state.SEP.join(state.highlight),
             collapse_value=state.SEP.join(state.collapse),
+            remove_leaves_value=state.remove_leaves_depth,
+            add_leaves_value=state.add_leaves_depth,
             sep=state.SEP,
         )
         return rendered
@@ -87,6 +93,8 @@ def route_index():
             'inptInvertFileFilter' in request.form,
             request.form['inptHighlight'],
             request.form['inptCollapse'],
+            request.form.get('inptRemoveLeaves', 0),
+            request.form.get('inptAddLeaves', 0),
         )
         rendered = render_template(
             'index.html',
@@ -96,6 +104,8 @@ def route_index():
             invert_filename_value=state.invert_filename_filter,
             highlight_value=state.SEP.join(state.highlight),
             collapse_value=state.SEP.join(state.collapse),
+            remove_leaves_value=state.remove_leaves_depth,
+            add_leaves_value=state.add_leaves_depth,
             sep=state.SEP,
         )
         return rendered
@@ -111,6 +121,10 @@ def network_json():
         graph = graph.filter_nodes(state.filter, invert=state.invert_filter)
     if state.collapse != ['']:
         graph = graph.collapse_children(state.collapse)
+    if state.add_leaves_depth > 0:
+        graph = graph.add_leaves(state.add_leaves_depth)
+    if state.remove_leaves_depth > 0:
+        graph = graph.remove_leaves(state.remove_leaves_depth)
     if state.highlight != ['']:
         attributes = ['color', 'style']
         values = ['red', 'filled']
@@ -149,6 +163,8 @@ def reload():
         'inptInvertFileFilter' in request.form,
         request.form['inptHighlight'],
         request.form['inptCollapse'],
+        request.form.get('inptRemoveLeaves', 0),
+        request.form.get('inptAddLeaves', 0),
     )
     rendered = render_template(
         'index.html',
@@ -158,6 +174,8 @@ def reload():
         invert_filename_value=state.invert_filename_filter,
         highlight_value=state.SEP.join(state.highlight),
         collapse_value=state.SEP.join(state.collapse),
+        remove_leaves_value=state.remove_leaves_depth,
+        add_leaves_value=state.add_leaves_depth,
         sep=state.SEP,
     )
     return rendered
@@ -174,6 +192,8 @@ def reset():
         'invert_filename_value': state.invert_filename_filter,
         'highlight_value': state.highlight,
         'collapse_value': state.SEP.join(state.collapse),
+        'remove_leaves_value': state.remove_leaves_depth,
+        'add_leaves_value': state.add_leaves_depth,
     })
 
 

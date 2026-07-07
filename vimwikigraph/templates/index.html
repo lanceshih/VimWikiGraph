@@ -36,6 +36,10 @@
       <input type="search" placeholder="Highlight Regexes" value="{{ highlight_value }}" name="inptHighlight" id="inptHighlight" title="Multiple regexes can be separated by '{{ sep }}'"/>
       <label for="inptCollapse">Collapse:</label><br>
         <input type="search" placeholder="Collapse Nodes" value="{{ collapse_value }}" name="inptCollapse" id="inptCollapse" title="List of nodes separated by '{{ sep }}' to collapse"/>
+      <label for="inptAddLeaves">Add Leaves: <span id="addLeavesDisplay">{{ add_leaves_value }}</span></label><br>
+      <input type="range" min="0" max="10" value="{{ add_leaves_value }}" name="inptAddLeaves" id="inptAddLeaves"/>
+      <label for="inptRemoveLeaves">Remove Leaves: <span id="removeLeavesDisplay">{{ remove_leaves_value }}</span></label><br>
+      <input type="range" min="0" max="10" value="{{ remove_leaves_value }}" name="inptRemoveLeaves" id="inptRemoveLeaves"/>
       <div id="buttons">
         <input type="submit" id="btnApply" value="Apply"/>
         <input type="button" id="btnReset" value="Reset" title="Reset filters to config values">
@@ -60,6 +64,15 @@
   const invertFileFilter = document.getElementsByName("inptInvertFileFilter")[0];
   const inptHighlight = document.getElementById("inptHighlight");
   const inptCollapse = document.getElementById("inptCollapse");
+  const inptRemoveLeaves = document.getElementById("inptRemoveLeaves");
+  const inptAddLeaves = document.getElementById("inptAddLeaves");
+
+  inptRemoveLeaves.addEventListener("input", () => {
+    document.getElementById("removeLeavesDisplay").textContent = inptRemoveLeaves.value;
+  });
+  inptAddLeaves.addEventListener("input", () => {
+    document.getElementById("addLeavesDisplay").textContent = inptAddLeaves.value;
+  });
   const graphContainer = document.getElementById("graph");
   const tagsContainer = document.getElementById('tagsContainer');
 
@@ -78,6 +91,10 @@
         invertFileFilter.checked = json.invert_filename_value;
         inptHighlight.value = json.highlight_value;
         inptCollapse.value = json.collapse_value;
+        inptRemoveLeaves.value = json.remove_leaves_value;
+        document.getElementById("removeLeavesDisplay").textContent = json.remove_leaves_value;
+        inptAddLeaves.value = json.add_leaves_value;
+        document.getElementById("addLeavesDisplay").textContent = json.add_leaves_value;
       } else {
         console.error("Reset request failed. Error code: " + xhrTag.status);
       }

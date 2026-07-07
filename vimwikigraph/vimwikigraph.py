@@ -2,7 +2,6 @@ import copy
 import os
 import re
 import traceback
-import logging
 from logging import critical, debug, error, info, warning
 
 import networkx as nx
@@ -223,6 +222,41 @@ class VimwikiGraph:
                 del self.graph.nodes[node]['contraction']
             except Exception:
                 traceback.print_exc()
+        return self
+
+    def add_leaves(self, depth: int = 1):
+        """
+        Restores leaf nodes from the original graph one layer at a time, repeated `depth` times.
+        A node is eligible if it is absent from the current graph but has at least one predecessor
+        that is present. Edges between all newly added nodes are also restored.
+
+        Args:
+            depth (int): Number of layers of leaves to restore.
+        """
+        for _ in range(depth):
+            current_nodes = set(self.graph.nodes)
+            missing = set(self.original_graph.nodes) - current_nodes
+            to_add = [n for n in missing if any(p in current_nodes for p in self.original_graph.predecessors(n))]
+            if not to_add:
+                break
+            self.graph.add_nodes_from((n, self.original_graph.nodes[n]) for n in to_add)
+            reachable = current_nodes | set(to_add)
+            self.graph.add_edges_from(
+                (u, v) for u, v in self.original_graph.edges
+                if u in reachable and v in reachable and not self.graph.has_edge(u, v)
+            )
+        return self
+
+    def remove_leaves(self, depth: int = 1):
+        """
+        Removes leaf nodes (out-degree 0) from the graph, repeated `depth` times.
+
+        Args:
+            depth (int): Number of layers of leaves to remove.
+        """
+        for _ in range(depth):
+            leaves = [n for n in self.graph.nodes if self.graph.out_degree(n) == 0]
+            self.graph.remove_nodes_from(leaves)
         return self
 
     def remove_nonadjacent_nodes(self, node: str, depth: int = 1):
