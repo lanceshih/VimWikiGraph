@@ -20,7 +20,7 @@ class State:
         self.vimwikigraphdir = os.environ.get('VIMWIKIDIR', '')
         if not self.vimwikigraphdir:
             raise ValueError('VIMWIKIDIR environment variable is not set')
-        self.vimwikigraph = VimwikiGraph(self.vimwikigraphdir)
+        self.vimwikigraph = VimwikiGraph(self.vimwikigraphdir, app.config.get('FILE_EXTENSIONS', ['wiki']))
         self.vimwikitags = VimwikiTags(self.vimwikigraphdir)
         self.reset_form()
         self.exclude_tags = app.config.get('EXCLUDE_TAGS', [])
