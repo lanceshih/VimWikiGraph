@@ -197,6 +197,23 @@ def reset():
     })
 
 
+@app.route('/highlight', methods=['POST'])
+def highlight():
+    state = State.get_instance()
+    regex = request.json.get('regex', '') if request.json else ''
+    nodes = []
+    try:
+        for node, lines in state.vimwikigraph.lines.items():
+            if regex and re.search(regex, ''.join(lines), re.IGNORECASE):
+                nodes.append({'id': node, 'color': 'red'})
+            else:
+                nodes.append({'id': node, 'color': None})
+    except re.error:
+        for node in state.vimwikigraph.lines:
+            nodes.append({'id': node, 'color': None})
+    return json.dumps({'nodes': nodes})
+
+
 @app.route('/tags', methods=['GET'])
 def tags():
     state = State.get_instance()

@@ -141,6 +141,26 @@
     };
   }
 
+  let visData = null;
+
+  let highlightTimer = null;
+  inptHighlight.addEventListener("input", function() {
+    clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(function() {
+      const xhrHL = new XMLHttpRequest();
+      xhrHL.open("POST", "http://127.0.0.1:5000/highlight");
+      xhrHL.setRequestHeader("Content-type", "application/json; charset=utf-8");
+      xhrHL.send(JSON.stringify({regex: inptHighlight.value}));
+      xhrHL.onload = function() {
+        if (xhrHL.status === 200 && visData) {
+          const existing = new Set(visData.nodes.getIds());
+          const updates = JSON.parse(xhrHL.responseText).nodes.filter(n => existing.has(n.id));
+          visData.nodes.update(updates);
+        }
+      };
+    }, 250);
+  });
+
   const xhr = new XMLHttpRequest();
   xhr.open("GET", "http://127.0.0.1:5000/network");
   xhr.send();
@@ -151,6 +171,7 @@
         nodes: new vis.DataSet(json.nodes),
         edges: new vis.DataSet(json.edges),
       };
+      visData = data;
       var options = {
         layout: {
           improvedLayout: false
