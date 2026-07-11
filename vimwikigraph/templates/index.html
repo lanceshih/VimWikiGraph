@@ -33,17 +33,32 @@
         </label>
       </div>
       <label for="inptHighlight">Highlight:</label><br>
-      <input type="search" placeholder="Highlight Regexes" value="{{ highlight_value }}" name="inptHighlight" id="inptHighlight" title="Multiple regexes can be separated by '{{ sep }}'"/>
-      <label for="inptCollapse">Collapse:</label><br>
-        <input type="search" placeholder="Collapse Nodes" value="{{ collapse_value }}" name="inptCollapse" id="inptCollapse" title="List of nodes separated by '{{ sep }}' to collapse"/>
+      <div class="filterinputs">
+        <input type="search" placeholder="Highlight Regexes" value="{{ highlight_value }}" name="inptHighlight" id="inptHighlight" title="Multiple regexes can be separated by '{{ sep }}'"/>
+        <label class="switch" title="Embedding similarity">
+          <input type="checkbox" id="inptEmbedMode" {% if embed_mode_default %}checked{% endif %}/>
+          <span class="slider"/>
+        </label>
+      </div>
+      <div id="embedOptions" style="display:{% if embed_mode_default %}block{% else %}none{% endif %}">
+        <label for="inptEmbedThreshold">Similarity threshold: <span id="embedThresholdDisplay">0.012</span></label><br>
+        <input type="range" min="0" max="50" value="12" id="inptEmbedThreshold"/>
+        <div id="embedIndexInfo">
+          <span id="embedIndexStatus"></span><button type="button" id="btnEmbedRebuild">Rebuild</button>
+        </div>
+      </div>
       <label for="inptAddLeaves">Add Leaves: <span id="addLeavesDisplay">{{ add_leaves_value }}</span></label><br>
       <input type="range" min="0" max="10" value="{{ add_leaves_value }}" name="inptAddLeaves" id="inptAddLeaves"/>
       <label for="inptRemoveLeaves">Remove Leaves: <span id="removeLeavesDisplay">{{ remove_leaves_value }}</span></label><br>
       <input type="range" min="0" max="10" value="{{ remove_leaves_value }}" name="inptRemoveLeaves" id="inptRemoveLeaves"/>
+      <label for="inptDateMin">Date From:</label><br>
+      <input type="date" name="inptDateMin" id="inptDateMin" value="{{ date_min_value }}"/><br>
+      <label for="inptDateMax">Date To:</label><br>
+      <input type="date" name="inptDateMax" id="inptDateMax" value="{{ date_max_value }}"/>
       <div id="buttons">
-        <input type="submit" id="btnApply" value="Apply"/>
+        <input type="button" id="btnApply" value="Apply"/>
         <input type="button" id="btnReset" value="Reset" title="Reset filters to config values">
-        <input type="submit" id="btnReload" formaction="/reload" value="Reload" title="Rebuild graph after changes to wiki files">
+        <input type="button" id="btnReload" value="Reload" title="Rebuild graph after changes to wiki files">
       </div>
     </form>
     <div id="tagsContainer">
@@ -63,15 +78,64 @@
   const inptFileFilter = document.getElementById("inptFileFilter");
   const invertFileFilter = document.getElementsByName("inptInvertFileFilter")[0];
   const inptHighlight = document.getElementById("inptHighlight");
-  const inptCollapse = document.getElementById("inptCollapse");
+  const inptEmbedMode = document.getElementById("inptEmbedMode");
+  const inptEmbedThreshold = document.getElementById("inptEmbedThreshold");
   const inptRemoveLeaves = document.getElementById("inptRemoveLeaves");
   const inptAddLeaves = document.getElementById("inptAddLeaves");
+  const inptDateMin = document.getElementById("inptDateMin");
+  const inptDateMax = document.getElementById("inptDateMax");
 
   inptRemoveLeaves.addEventListener("input", () => {
     document.getElementById("removeLeavesDisplay").textContent = inptRemoveLeaves.value;
   });
   inptAddLeaves.addEventListener("input", () => {
     document.getElementById("addLeavesDisplay").textContent = inptAddLeaves.value;
+  });
+
+  function fetchEmbedStatus() {
+    const statusEl = document.getElementById("embedIndexStatus");
+    statusEl.textContent = "Checking…";
+    const xhrS = new XMLHttpRequest();
+    xhrS.open("GET", "http://127.0.0.1:5000/embed_index_status");
+    xhrS.send();
+    xhrS.onload = function() {
+      if (xhrS.status === 200) {
+        const s = JSON.parse(xhrS.responseText);
+        if (!s.exists) {
+          statusEl.textContent = s.error ? `Error: ${s.error}` : "No index found.";
+        } else if (s.last_built) {
+          statusEl.textContent = `${s.chunk_count} chunks · built ${s.last_built}`;
+        } else {
+          statusEl.textContent = `${s.chunk_count} chunks · build time unknown`;
+        }
+      } else {
+        statusEl.textContent = "Status unavailable.";
+      }
+    };
+  }
+
+  inptEmbedMode.addEventListener("change", () => {
+    document.getElementById("embedOptions").style.display = inptEmbedMode.checked ? "block" : "none";
+    if (inptEmbedMode.checked) fetchEmbedStatus();
+    sendHighlightRequest();
+  });
+
+  if (inptEmbedMode.checked) fetchEmbedStatus();
+
+  document.getElementById("btnEmbedRebuild").addEventListener("click", function() {
+    const statusEl = document.getElementById("embedIndexStatus");
+    statusEl.textContent = "Rebuilding…";
+    this.disabled = true;
+    const xhrR = new XMLHttpRequest();
+    xhrR.open("POST", "http://127.0.0.1:5000/embed_rebuild");
+    xhrR.send();
+    xhrR.onload = () => {
+      this.disabled = false;
+      fetchEmbedStatus();
+    };
+  });
+  inptEmbedThreshold.addEventListener("input", () => {
+    document.getElementById("embedThresholdDisplay").textContent = (inptEmbedThreshold.value / 1000).toFixed(3);
   });
   const graphContainer = document.getElementById("graph");
   const tagsContainer = document.getElementById('tagsContainer');
@@ -80,23 +144,25 @@
   //----------------------------------------------------------------------------------------------------
   // EVENT LISTENERS
   document.getElementById("btnReset").addEventListener("click", function() {
-    xhrTag.open("GET", "http://127.0.0.1:5000/reset");
-    xhrTag.send();
-    xhrTag.onload = function() {
-      if (xhrTag.status === 200) {
-        const json = JSON.parse(xhrTag.responseText);
+    const xhrReset = new XMLHttpRequest();
+    xhrReset.open("GET", "http://127.0.0.1:5000/reset");
+    xhrReset.send();
+    xhrReset.onload = function() {
+      if (xhrReset.status === 200) {
+        const json = JSON.parse(xhrReset.responseText);
         inptFilter.value = json.filter_value;
         invertFilter.checked = json.invert_filter_value;
         inptFileFilter.value = json.filename_value;
         invertFileFilter.checked = json.invert_filename_value;
         inptHighlight.value = json.highlight_value;
-        inptCollapse.value = json.collapse_value;
         inptRemoveLeaves.value = json.remove_leaves_value;
         document.getElementById("removeLeavesDisplay").textContent = json.remove_leaves_value;
         inptAddLeaves.value = json.add_leaves_value;
         document.getElementById("addLeavesDisplay").textContent = json.add_leaves_value;
+        inptDateMin.value = json.date_min_value;
+        inptDateMax.value = json.date_max_value;
       } else {
-        console.error("Reset request failed. Error code: " + xhrTag.status);
+        console.error("Reset request failed. Error code: " + xhrReset.status);
       }
       populateTagsContainer();
     };
@@ -119,7 +185,10 @@
   function requestNodeText(node) {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "http://127.0.0.1:5000/node");
-    var params = JSON.stringify({ node: node });
+    var params = JSON.stringify({
+      node: node,
+      ...(inptEmbedMode.checked ? { embed_query: inptHighlight.value } : { highlight: inptHighlight.value }),
+    });
     xhr.setRequestHeader("Content-type", "application/json; charset=utf-8");
     xhr.send(params);
     xhr.onload = function() {
@@ -142,53 +211,83 @@
   }
 
   let visData = null;
+  let network = null;
+  let savedPositions = {};
+  let highlightRequestSeq = 0;
+
+  function sendHighlightRequest() {
+    const seq = ++highlightRequestSeq;
+    const xhrHL = new XMLHttpRequest();
+    if (inptEmbedMode.checked) {
+      xhrHL.open("POST", "http://127.0.0.1:5000/embed_highlight");
+      xhrHL.setRequestHeader("Content-type", "application/json; charset=utf-8");
+      xhrHL.send(JSON.stringify({
+        query: inptHighlight.value,
+        threshold: inptEmbedThreshold.value / 1000,
+      }));
+    } else {
+      xhrHL.open("POST", "http://127.0.0.1:5000/highlight");
+      xhrHL.setRequestHeader("Content-type", "application/json; charset=utf-8");
+      xhrHL.send(JSON.stringify({regex: inptHighlight.value}));
+    }
+    xhrHL.onload = function() {
+      if (xhrHL.status === 200 && visData && seq === highlightRequestSeq) {
+        const existing = new Set(visData.nodes.getIds());
+        const updates = JSON.parse(xhrHL.responseText).nodes.filter(n => existing.has(n.id));
+        visData.nodes.update(updates);
+      }
+    };
+  }
 
   let highlightTimer = null;
   inptHighlight.addEventListener("input", function() {
     clearTimeout(highlightTimer);
-    highlightTimer = setTimeout(function() {
-      const xhrHL = new XMLHttpRequest();
-      xhrHL.open("POST", "http://127.0.0.1:5000/highlight");
-      xhrHL.setRequestHeader("Content-type", "application/json; charset=utf-8");
-      xhrHL.send(JSON.stringify({regex: inptHighlight.value}));
-      xhrHL.onload = function() {
-        if (xhrHL.status === 200 && visData) {
-          const existing = new Set(visData.nodes.getIds());
-          const updates = JSON.parse(xhrHL.responseText).nodes.filter(n => existing.has(n.id));
-          visData.nodes.update(updates);
-        }
-      };
-    }, 250);
+    highlightTimer = setTimeout(sendHighlightRequest, 250);
+  });
+  inptEmbedThreshold.addEventListener("input", function() {
+    clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(sendHighlightRequest, 250);
   });
 
-  const xhr = new XMLHttpRequest();
-  xhr.open("GET", "http://127.0.0.1:5000/network");
-  xhr.send();
-  xhr.onload = function() {
-    if (xhr.status === 200) {
-      var json = JSON.parse(xhr.responseText);
-      var data = {
-        nodes: new vis.DataSet(json.nodes),
-        edges: new vis.DataSet(json.edges),
-      };
-      visData = data;
-      var options = {
-        layout: {
-          improvedLayout: false
-        },
-      };
-      var network = new vis.Network(graphContainer, data, options);
-      network.on("click", function(properties) {
-        var node = properties.nodes[0];
-        if (node) {
-          requestNodeText(node);
+  function fetchNetwork() {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "http://127.0.0.1:5000/network");
+    xhr.send();
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        const json = JSON.parse(xhr.responseText);
+        json.nodes = json.nodes.map(n => {
+          const pos = savedPositions[n.id];
+          return pos ? { ...n, x: pos.x, y: pos.y } : n;
+        });
+        const data = {
+          nodes: new vis.DataSet(json.nodes),
+          edges: new vis.DataSet(json.edges),
+        };
+        visData = data;
+        if (network) {
+          network.setData(data);
+        } else {
+          network = new vis.Network(graphContainer, data, { layout: { improvedLayout: false } });
+          network.on("click", function(properties) {
+            var node = properties.nodes[0];
+            if (node) requestNodeText(node);
+          });
+          network.on("stabilizationIterationsDone", () => {
+            savedPositions = network.getPositions();
+          });
+          network.on("dragEnd", () => {
+            Object.assign(savedPositions, network.getPositions());
+          });
         }
-      });
-      network.on("")
-    } else {
-      console.error(`Network request failed. Error code: ${xhr.status} - ${xhr.statusText}`);
-    }
-  };
+        if (inptHighlight.value) sendHighlightRequest();
+      } else {
+        console.error(`Network request failed. Error code: ${xhr.status} - ${xhr.statusText}`);
+      }
+    };
+  }
+
+  fetchNetwork();
 
 
   //----------------------------------------------------------------------------------------------------
@@ -221,19 +320,58 @@
     inptFilter.value = selectedTags.join('|');
   }
 
-  const xhrTag = new XMLHttpRequest();
-  xhrTag.open("GET", "http://127.0.0.1:5000/tags");
-  xhrTag.send();
-  xhrTag.onload = function() {
-    if (xhrTag.status === 200) {
-      const json = JSON.parse(xhrTag.responseText);
-      tags = json.tags;
-      console.log(tags)
-      populateTagsContainer();
-    } else {
-      console.error(`Tag request failed. Error code: ${xhr.status} - ${xhr.statusText}`);
-    }
-  };
+  function fetchMeta() {
+    const xhrMeta = new XMLHttpRequest();
+    xhrMeta.open("GET", "http://127.0.0.1:5000/meta");
+    xhrMeta.send();
+    xhrMeta.onload = function() {
+      if (xhrMeta.status === 200) {
+        const meta = JSON.parse(xhrMeta.responseText);
+        inptDateMin.min = meta.date_min;
+        inptDateMin.max = meta.date_max;
+        inptDateMax.min = meta.date_min;
+        inptDateMax.max = meta.date_max;
+      }
+    };
+  }
+
+  function fetchTags() {
+    const xhrTag = new XMLHttpRequest();
+    xhrTag.open("GET", "http://127.0.0.1:5000/tags");
+    xhrTag.send();
+    xhrTag.onload = function() {
+      if (xhrTag.status === 200) {
+        const json = JSON.parse(xhrTag.responseText);
+        tags = json.tags;
+        populateTagsContainer();
+      } else {
+        console.error(`Tag request failed. Error code: ${xhrTag.status} - ${xhrTag.statusText}`);
+      }
+    };
+  }
+
+  fetchMeta();
+  fetchTags();
+
+  document.getElementById("btnApply").addEventListener("click", function() {
+    const xhrApply = new XMLHttpRequest();
+    xhrApply.open("POST", "http://127.0.0.1:5000/");
+    xhrApply.send(new FormData(document.querySelector("form")));
+    xhrApply.onload = function() {
+      fetchNetwork();
+    };
+  });
+
+  document.getElementById("btnReload").addEventListener("click", function() {
+    const xhrReload = new XMLHttpRequest();
+    xhrReload.open("POST", "http://127.0.0.1:5000/reload");
+    xhrReload.send();
+    xhrReload.onload = function() {
+      fetchMeta();
+      fetchTags();
+      fetchNetwork();
+    };
+  });
 </script>
 
 </html>

@@ -1,23 +1,26 @@
 import copy
 import os
 import re
-import traceback
-from logging import critical, debug, error, info, warning
+from datetime import datetime
+from logging import debug
 
 import networkx as nx
-import numpy as np
 
 
 class VimwikiGraph:
 
-    def __init__(self, root_dir: str, file_extensions: list, **args):
+    def __init__(self, root_dir: str, file_extensions: list, exclude_pattern: str = '',
+                 tag_pattern: str = r'^:((\w+:)+)', **args):
         self.graph = nx.DiGraph()
         self.root_dir = root_dir
         self.file_extensions = file_extensions
+        self.exclude_pattern = exclude_pattern
+        self.tag_pattern = tag_pattern
         self.lines = dict()
         self._canonical = dict()
         node_dict = self.__create_nodes()
         self.__parse_and_add_edges(node_dict)
+        self.__apply_exclude_pattern()
         self.original_graph = copy.deepcopy(self.graph)
 
     def __create_nodes(self):
@@ -28,7 +31,9 @@ class VimwikiGraph:
                 if split[-1] in self.file_extensions:
                     full_path = os.path.join(root, file)
                     node_dict[full_path] = root
-                    self.graph.add_node(full_path, label='.'.join(split[:-1]))
+                    stat = os.stat(full_path)
+                    self.graph.add_node(full_path, label='.'.join(split[:-1]),
+                                        mtime=stat.st_mtime, ctime=stat.st_ctime)
                     canonical = os.path.splitext(os.path.relpath(full_path, self.root_dir))[0]
                     self._canonical[canonical] = full_path
         return node_dict
@@ -45,15 +50,6 @@ class VimwikiGraph:
         canonical = os.path.splitext(os.path.relpath(path, self.root_dir))[0]
         return self._canonical.get(canonical, path)
 
-    def __lookup_node(self, path):
-        if path in self.graph.nodes:
-            return path
-        if os.path.isabs(path):
-            canonical = os.path.splitext(os.path.relpath(path, self.root_dir))[0]
-        else:
-            canonical = os.path.splitext(path)[0]
-        return self._canonical.get(canonical, path)
-
     def __parse_and_add_edges(self, node_dict):
         for name, root in node_dict.items():
             with open(name, 'r') as f:
@@ -68,6 +64,18 @@ class VimwikiGraph:
                 for link in raw_links:
                     child_node = self.__resolve_link(root, link)
                     self.graph.add_edge(name, child_node)
+
+    def __apply_exclude_pattern(self):
+        if not self.exclude_pattern:
+            return
+        nodes_to_remove = [
+            node for node, lines in self.lines.items()
+            if any(re.search(self.exclude_pattern, line) for line in lines)
+        ]
+        for node in nodes_to_remove:
+            self.graph.remove_node(node)
+            del self.lines[node]
+        self._canonical = {k: v for k, v in self._canonical.items() if v not in nodes_to_remove}
 
     def __filter_lines(self, regexes: list, lines: list):
         """
@@ -111,7 +119,29 @@ class VimwikiGraph:
         self._canonical = dict()
         node_dict = self.__create_nodes()
         self.__parse_and_add_edges(node_dict)
+        self.__apply_exclude_pattern()
         self.original_graph = copy.deepcopy(self.graph)
+
+    def get_tags(self, pattern: str = None) -> dict:
+        """
+        Extracts tags from all indexed documents using a regular expression.
+
+        Args:
+            pattern (str): Regex with a capturing group of the form '(tag:)+'. Defaults to self.tag_pattern.
+
+        Returns:
+            dict: Tag name -> occurrence count, sorted by count descending.
+        """
+        pattern = pattern or self.tag_pattern
+        counts = dict()
+        for lines in self.lines.values():
+            for line in lines:
+                m = re.match(pattern, line)
+                if m:
+                    for tag in m.group(1).split(':'):
+                        if tag:
+                            counts[tag] = counts.get(tag, 0) + 1
+        return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
 
     def add_attribute_by_regex(self, regexes: list, attribute: list, value: list):
         """
@@ -164,26 +194,6 @@ class VimwikiGraph:
         self.graph.remove_nodes_from(nodes_to_remove)
         return self
 
-    def collapse_children(self, nodes: list, depth: int = 1):
-        """
-        All child nodes will be collapsed into this node. Edges from and to children will go to the parent instead.
-
-        Args:
-            node (str): Full or relative path of a wiki document.
-            depth (int): Number of levels to collapse.
-        """
-        for node in nodes:
-            try:
-                node = self.__lookup_node(node)
-                self.graph.nodes[node]['is_collapsed'] = True
-                children = nx.dfs_successors(self.graph, node, depth)
-                for child in np.concatenate(list(children.values())):
-                    nx.contracted_nodes(self.graph, node, child, self_loops=False, copy=False)
-                del self.graph.nodes[node]['contraction']
-            except Exception:
-                traceback.print_exc()
-        return self
-
     def add_leaves(self, depth: int = 1):
         """
         Restores leaf nodes from the original graph one layer at a time, repeated `depth` times.
@@ -217,4 +227,25 @@ class VimwikiGraph:
         for _ in range(depth):
             leaves = [n for n in self.graph.nodes if self.graph.out_degree(n) == 0]
             self.graph.remove_nodes_from(leaves)
+        return self
+
+    def get_date_range(self, attribute: str = 'mtime'):
+        timestamps = [data[attribute] for _, data in self.original_graph.nodes(data=True) if attribute in data]
+        if not timestamps:
+            return None, None
+        return min(timestamps), max(timestamps)
+
+    def filter_by_date(self, date_min: str, date_max: str, attribute: str = 'mtime'):
+        """
+        Remove nodes whose file date falls outside [date_min, date_max] (inclusive, YYYY-MM-DD strings).
+        """
+        nodes_to_remove = []
+        for node, data in self.graph.nodes(data=True):
+            ts = data.get(attribute)
+            if ts is None:
+                continue
+            node_date = datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
+            if (date_min and node_date < date_min) or (date_max and node_date > date_max):
+                nodes_to_remove.append(node)
+        self.graph.remove_nodes_from(nodes_to_remove)
         return self

@@ -7,16 +7,14 @@ Filtering is performed via regular expressions; multiple keywords can be combine
 ![vimwikigraph](screenshots/vimwikigraph.png)
 
 # Installation
-Clone the repository, run `pip install -e .` and copy `vimwikigraph.sh` to a directory included in your PATH.
+Clone the repository, install requirements `pip install -r requirements.txt` and run `vimwikigraph.sh`.
 
 
 # Configuration
-The path to the wiki and all options must be specified in a config file pointed to by an environment variable:
+Copy `vimwikigraph.cfg` to another directory and set `VIMWIKIGRAPH_CONFIG` accordingly.
 ```
 export VIMWIKIGRAPH_CONFIG=~/path/to/vimwikigraph.cfg
 ```
-
-A template config file is provided. Available options:
 
 | Option | Default | Description |
 |---|---|---|
@@ -26,10 +24,10 @@ A template config file is provided. Available options:
 | `DEFAULT_FILE_FILTER` | `[]` | Regex list applied to filenames on load. |
 | `DEFAULT_INVERT_FILE_FILTER` | `False` | Invert the filename filter. |
 | `DEFAULT_HIGHLIGHT` | `[]` | Regex list for nodes to highlight on load. |
-| `DEFAULT_COLLAPSE` | `[]` | List of nodes whose children are collapsed on load. |
 | `DEFAULT_REMOVE_LEAVES_DEPTH` | `0` | Number of leaf layers to strip on load. |
 | `DEFAULT_ADD_LEAVES_DEPTH` | `0` | Number of leaf layers to restore on load. |
-| `EXCLUDE_TAGS` | `[]` | Tags to hide from the tag browser. |
+| `EXCLUDE_PATTERN` | `''` | Regex matched against file contents. Matching nodes are excluded from the graph entirely. |
+| `TAG_PATTERN` | `'^:((\w+:)+)'` | Regex used to extract tags from file contents for the tag browser. |
 | `N_TAGS` | `30` | Maximum number of tags shown in the tag browser. |
 | `SEPARATOR` | `';'` | Delimiter for multiple values in filter fields. |
 
@@ -40,6 +38,5 @@ A template config file is provided. Available options:
 | Filter | Regex matched against file contents. Nodes not matching all expressions are removed. |
 | Filename Filter | Regex matched against filenames. |
 | Highlight | Regex matched against file contents. Matching nodes are coloured red. Updates live as you type. |
-| Collapse | Whitespace-separated list of nodes whose children are contracted into them. |
 | Add Leaves | Restore this many layers of nodes from the original graph outward. |
 | Remove Leaves | Strip this many layers of leaf nodes (out-degree 0). |
