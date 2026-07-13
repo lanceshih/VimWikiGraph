@@ -35,13 +35,13 @@
       <label for="inptHighlight">Highlight:</label><br>
       <div class="filterinputs">
         <input type="search" placeholder="Highlight Regexes" value="{{ highlight_value }}" name="inptHighlight" id="inptHighlight" title="Multiple regexes can be separated by '{{ sep }}'"/>
-        <label class="switch" title="Embedding similarity">
+        <label class="switch" id="lblEmbedMode" title="{% if embed_mode_default %}Regex{% else %}Embedding similarity{% endif %}">
           <input type="checkbox" id="inptEmbedMode" {% if embed_mode_default %}checked{% endif %}/>
           <span class="slider"/>
         </label>
       </div>
       <div id="embedOptions" style="display:{% if embed_mode_default %}block{% else %}none{% endif %}">
-        <label for="inptEmbedThreshold">Similarity threshold: <span id="embedThresholdDisplay">0.012</span></label><br>
+        <label for="inptEmbedThreshold">sim threshold: <span id="embedThresholdDisplay">0.012</span></label><br>
         <input type="range" min="0" max="50" value="12" id="inptEmbedThreshold"/>
         <div id="embedIndexInfo">
           <span id="embedIndexStatus"></span><button type="button" id="btnEmbedRebuild">Rebuild</button>
@@ -116,6 +116,7 @@
 
   inptEmbedMode.addEventListener("change", () => {
     document.getElementById("embedOptions").style.display = inptEmbedMode.checked ? "block" : "none";
+    document.getElementById("lblEmbedMode").title = inptEmbedMode.checked ? "Regex" : "Embedding similarity";
     if (inptEmbedMode.checked) fetchEmbedStatus();
     sendHighlightRequest();
   });
@@ -320,6 +321,15 @@
     inptFilter.value = selectedTags.join('|');
   }
 
+  function syncTagSelectionFromFilter() {
+    const inptFilterText = inptFilter.value;
+    tagsContainer.querySelectorAll('.tag').forEach(tagElement => {
+      tagElement.classList.toggle('selected', inptFilterText.includes(tagElement.dataset.value));
+    });
+  }
+
+  inptFilter.addEventListener('input', syncTagSelectionFromFilter);
+
   function fetchMeta() {
     const xhrMeta = new XMLHttpRequest();
     xhrMeta.open("GET", "http://127.0.0.1:5000/meta");
@@ -365,7 +375,7 @@
   document.getElementById("btnReload").addEventListener("click", function() {
     const xhrReload = new XMLHttpRequest();
     xhrReload.open("POST", "http://127.0.0.1:5000/reload");
-    xhrReload.send();
+    xhrReload.send(new FormData(document.querySelector("form")));
     xhrReload.onload = function() {
       fetchMeta();
       fetchTags();
